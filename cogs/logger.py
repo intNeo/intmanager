@@ -150,29 +150,44 @@ class Logger(commands.GroupCog, name="log"):
     
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
-        if before.content != after.content:
+        if before.content != after.content or before.attachments != after.attachments:
+            attachments = ""
+            if before.attachments:
+                links = [f"[📎 Attachment {i+1}]({att.url})" for i, att in enumerate(before.attachments)]
+                attachments = "\n".join(links)
+
             await self.log(before.guild,
                 f"✏️ Message from <@{before.author.id}> edited in {before.channel.mention}\n"
-                f"**Before:** {before.content}\n**After:** {after.content}")
+                f"**Before:** {before.content or '*[no text]*'}\n"
+                f"**After:** {after.content or '*[no text]*'}\n"
+                f"{attachments if attachments else ''}")
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         if not message.guild or not message.author or message.author.bot:
             return
 
+        attachments = ""
+        if message.attachments:
+            links = [f"[📎 Attachment {i+1}]({att.url})" for i, att in enumerate(message.attachments)]
+            attachments = "\n".join(links)
+
         audit_user = None
-        
         async for entry in message.guild.audit_logs(limit=1, action=discord.AuditLogAction.message_delete):
             if (entry.target and entry.target.id == message.author.id and
                     entry.extra and entry.extra.channel.id == message.channel.id):
                 audit_user = entry.user
                 break
 
-        # Если сам удалил — не выдаём как чужое удаление
         if audit_user and audit_user.id != message.author.id:
-            msg = f"🗑️ {audit_user.mention} deleted a message by {message.author.mention} в {message.channel.mention}\n**Content:** {message.content}"
+            msg = f"🗑️ {audit_user.mention} deleted a message by {message.author.mention} in {message.channel.mention}\n" \
+                f"**Content:** {message.content or '*[no text]*'}"
         else:
-            msg = f"🗑️ Message by {message.author.mention} deleted in {message.channel.mention}\n**Content:** {message.content}"
+            msg = f"🗑️ Message by {message.author.mention} deleted in {message.channel.mention}\n" \
+                f"**Content:** {message.content or '*[no text]*'}"
+
+        if attachments:
+            msg += f"\n{attachments}"
 
         await self.log(message.guild, msg)
 

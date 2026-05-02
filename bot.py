@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 from db import Database
 from cogs.autorole import AutoRole
 from cogs.logger import Logger
+from cogs.loggerserver import LoggerServer
 from cogs.general import General
 
-load_dotenv()
+load_dotenv(os.getenv("ENV_FILE", "config/.env"))
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
@@ -25,6 +26,7 @@ class AutoRoleBot(commands.Bot):
         await self.db.setup()
         await self.add_cog(AutoRole(self))
         await self.add_cog(Logger(self))
+        await self.add_cog(LoggerServer(self))
         await self.add_cog(General(self))
         self.tree.on_error = self.on_app_command_error
         await self.tree.sync()
@@ -42,7 +44,7 @@ class AutoRoleBot(commands.Bot):
 bot = AutoRoleBot()
 @bot.event
 async def on_ready():
-    print(f"✅ Бот запущен: {bot.user}")
+    print(f"✅ Bot is started: {bot.user}")
     print('Creator intNeo for intNeo Production server.')
     activity = discord.Activity(type=discord.ActivityType.listening, name="/help")
     await bot.change_presence(status=discord.Status.online, activity=activity)

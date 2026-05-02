@@ -30,6 +30,72 @@ class Logger(commands.GroupCog, name="log"):
         except discord.Forbidden:
             pass
 
+    def format_value(self, value):
+        if value is None:
+            return "None"
+        return str(value)
+
+    def format_permission_value(self, value):
+        if value is True:
+            return "✅ Allow"
+        if value is False:
+            return "❌ Deny"
+        return "➖ Neutral"
+
+    def diff_overwrites(self, before, after):
+        changes = []
+
+        before_overwrites = before.overwrites
+        after_overwrites = after.overwrites
+
+        targets = set(before_overwrites.keys()) | set(after_overwrites.keys())
+
+        for target in targets:
+            before_ow = before_overwrites.get(target)
+            after_ow = after_overwrites.get(target)
+
+            target_name = getattr(target, "mention", None) or getattr(target, "name", str(target))
+
+            if before_ow is None:
+                changes.append(f"**Permissions added for {target_name}**")
+                for perm, value in after_ow:
+                    if value is not None:
+                        changes.append(
+                            f"• `{perm}`: ➖ Neutral → {self.format_permission_value(value)}"
+                        )
+                continue
+
+            if after_ow is None:
+                changes.append(f"**Permissions removed for {target_name}**")
+                for perm, value in before_ow:
+                    if value is not None:
+                        changes.append(
+                            f"• `{perm}`: {self.format_permission_value(value)} → ➖ Neutral"
+                        )
+                continue
+
+            perm_changes = []
+
+            before_perms = dict(before_ow)
+            after_perms = dict(after_ow)
+
+            all_perms = set(before_perms.keys()) | set(after_perms.keys())
+
+            for perm in sorted(all_perms):
+                old = before_perms.get(perm)
+                new = after_perms.get(perm)
+
+                if old != new:
+                    perm_changes.append(
+                        f"• `{perm}`: {self.format_permission_value(old)} → {self.format_permission_value(new)}"
+                    )
+
+            if perm_changes:
+                changes.append(f"**Permissions changed for {target_name}:**")
+                changes.extend(perm_changes)
+
+        return changes
+    
     @is_admin()
     @app_commands.command(name="add", description="Set log channel")
     async def add(self, interaction: discord.Interaction, channel: discord.TextChannel):
@@ -117,10 +183,36 @@ class Logger(commands.GroupCog, name="log"):
     async def on_user_update(self, before, after):
         for guild in self.bot.guilds:
             member = guild.get_member(after.id)
+
             if member and before.name != after.name:
-                await self.log(guild, f"📝 <@{after.id}> changed username from **{before.name}** to **{after.name}**")
+                await self.log(
+                    guild,
+                    f"📝 <@{after.id}> changed global username: "
+                    f"**{before.name}** → **{after.name}**"
+                )
+
+            if member and before.global_name != after.global_name:
+                old_global = before.global_name or before.name
+                new_global = after.global_name or after.name
+
+                await self.log(
+                    guild,
+                    f"🌐 <@{after.id}> changed global display name: "
+                    f"**{old_global}** → **{new_global}**"
+                )
     
     @commands.Cog.listener()
+    async def on_member_update(self, before, after):
+        if before.nick != after.nick:
+            old_nick = before.nick or before.name
+            new_nick = after.nick or after.name
+
+            await self.log(
+                after.guild,
+                f"✏️ <@{after.id}> changed nickname: **{old_nick}** → **{new_nick}**"
+            )
+    
+    """@commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.nick != after.nick:
             old_nick = before.nick or before.name
@@ -138,7 +230,7 @@ class Logger(commands.GroupCog, name="log"):
             async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_update):
                 if entry.target.id == after.id:
                     await self.log(after.guild, f"🔓 {entry.user.mention} removed timeout from {after.mention}")
-                    break
+                    break"""
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
@@ -205,9 +297,72 @@ class Logger(commands.GroupCog, name="log"):
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
-        async for entry in before.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_update):
-            await self.log(before.guild, f"⚙️ {entry.user.mention} updated channel: `{before.name}`")
-            break
+        changes = []
+
+        fields = [
+            ("name", "Name"),
+            ("topic", "Topic"),
+            ("nsfw", "NSFW"),
+            ("slowmode_delay", "Slowmode"),
+            ("bitrate", "Bitrate"),
+            ("user_limit", "User limit"),
+            ("position", "Position"),
+            ("rtc_region", "Voice region"),
+            ("video_quality_mode", "Video quality"),
+            ("default_auto_archive_duration", "Auto archive duration"),
+            ("default_thread_slowmode_delay", "Thread slowmode"),
+            ("default_sort_order", "Sort order"),
+            ("default_reaction_emoji", "Default reaction emoji"),
+        ]
+
+        for attr, label in fields:
+            if hasattr(before, attr) and hasattr(after, attr):
+                old = getattr(before, attr)
+                new = getattr(after, attr)
+
+                if old != new:
+                    changes.append(
+                        f"**{label}:** `{self.format_value(old)}` → `{self.format_value(new)}`"
+                    )
+
+        if hasattr(before, "category") and before.category != after.category:
+            old = before.category.name if before.category else "None"
+            new = after.category.name if after.category else "None"
+            changes.append(f"**Category:** `{old}` → `{new}`")
+
+        if hasattr(before, "overwrites") and before.overwrites != after.overwrites:
+            changes.extend(self.diff_overwrites(before, after))
+
+        if not changes:
+            changes.append("Unknown channel settings changed.")
+
+        audit_user = None
+
+        try:
+            async for entry in before.guild.audit_logs(
+                limit=5,
+                action=discord.AuditLogAction.channel_update
+            ):
+                if (
+                    entry.target
+                    and entry.target.id == after.id
+                    and entry.user
+                    and (discord.utils.utcnow() - entry.created_at).total_seconds() < 15
+                ):
+                    audit_user = entry.user
+                    break
+        except discord.Forbidden:
+            pass
+
+        user_text = audit_user.mention if audit_user else "Someone"
+
+        channel_text = after.mention if hasattr(after, "mention") else f"`{after.name}`"
+
+        await self.log(
+            before.guild,
+            f"⚙️ {user_text} updated channel: {channel_text}\n"
+            + "\n".join(changes)
+        )
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):

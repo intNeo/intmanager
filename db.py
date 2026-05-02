@@ -1,7 +1,7 @@
 import aiosqlite
 
 class Database:
-    def __init__(self, path="data.db"):
+    def __init__(self, path="data/data.db"):
         self.path = path
 
     async def setup(self):

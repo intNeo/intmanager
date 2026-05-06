@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from db import Database
 
 
@@ -7,7 +7,58 @@ class LoggerServer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db: Database = bot.db
+        self.active_timeouts = {}
+        self._ready_scanned = False
 
+    async def cog_load(self):
+        self.timeout_watcher.start()
+
+    async def cog_unload(self):
+        self.timeout_watcher.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if self._ready_scanned:
+            return
+
+        self._ready_scanned = True
+        now = discord.utils.utcnow()
+
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                if member.timed_out_until and member.timed_out_until > now:
+                    self.active_timeouts[(guild.id, member.id)] = member.timed_out_until
+
+    @tasks.loop(seconds=30)
+    async def timeout_watcher(self):
+        now = discord.utils.utcnow()
+
+        for (guild_id, member_id), until in list(self.active_timeouts.items()):
+            if now < until:
+                continue
+
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                self.active_timeouts.pop((guild_id, member_id), None)
+                continue
+
+            try:
+                member = await guild.fetch_member(member_id)
+            except discord.NotFound:
+                self.active_timeouts.pop((guild_id, member_id), None)
+                continue
+            except discord.Forbidden:
+                continue
+
+            if not member.timed_out_until or member.timed_out_until <= now:
+                await self.log(
+                    guild,
+                    f"⌛ Timeout expired for {member.mention}"
+                )
+                self.active_timeouts.pop((guild_id, member_id), None)
+            else:
+                self.active_timeouts[(guild_id, member_id)] = member.timed_out_until
+    
     async def log(self, guild, message):
         channel_id = await self.db.get_log_channel(guild.id)
         if not channel_id:
@@ -186,6 +237,7 @@ class LoggerServer(commands.Cog):
         # Выдача timeout
         if before.timed_out_until != after.timed_out_until:
             if after.timed_out_until:
+                self.active_timeouts[(after.guild.id, after.id)] = after.timed_out_until
                 audit_user = None
 
                 try:
@@ -207,8 +259,9 @@ class LoggerServer(commands.Cog):
                     f"{after.timed_out_until.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
 
-        # Снятие timeout
+        # Снятие timeout / истечение timeout
         if before.timed_out_until and not after.timed_out_until:
+            self.active_timeouts.pop((after.guild.id, after.id), None)
             audit_user = None
 
             try:
@@ -216,18 +269,27 @@ class LoggerServer(commands.Cog):
                     limit=5,
                     action=discord.AuditLogAction.member_update
                 ):
-                    if entry.target and entry.target.id == after.id:
+                    if (
+                        entry.target
+                        and entry.target.id == after.id
+                        and entry.user
+                        and (discord.utils.utcnow() - entry.created_at).total_seconds() < 15
+                    ):
                         audit_user = entry.user
                         break
             except discord.Forbidden:
                 pass
 
-            user_text = audit_user.mention if audit_user else "Someone"
-
-            await self.log(
-                after.guild,
-                f"🔓 {user_text} removed timeout from {after.mention}"
-            )
+            if audit_user:
+                await self.log(
+                    after.guild,
+                    f"🔓 {audit_user.mention} removed timeout from {after.mention}"
+                )
+            else:
+                await self.log(
+                    after.guild,
+                    f"⌛ Timeout expired for {after.mention}"
+                )
 
     @commands.Cog.listener()
     async def on_guild_update(self, before, after):

@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from db import Database
 from utils.checks import is_admin
+import asyncio
 
 class Logger(commands.GroupCog, name="log"):
     def __init__(self, bot):
@@ -54,7 +55,10 @@ class Logger(commands.GroupCog, name="log"):
             before_ow = before_overwrites.get(target)
             after_ow = after_overwrites.get(target)
 
-            target_name = getattr(target, "mention", None) or getattr(target, "name", str(target))
+            if isinstance(target, discord.Role) and target.is_default():
+                target_name = "@everyone"
+            else:
+                target_name = getattr(target, "mention", None) or getattr(target, "name", str(target))
 
             if before_ow is None:
                 changes.append(f"**Permissions added for {target_name}**")
@@ -338,23 +342,51 @@ class Logger(commands.GroupCog, name="log"):
 
         audit_user = None
 
-        try:
-            async for entry in before.guild.audit_logs(
-                limit=5,
-                action=discord.AuditLogAction.channel_update
-            ):
-                if (
-                    entry.target
-                    and entry.target.id == after.id
-                    and entry.user
-                    and (discord.utils.utcnow() - entry.created_at).total_seconds() < 15
-                ):
-                    audit_user = entry.user
-                    break
-        except discord.Forbidden:
-            pass
+        audit_actions = [discord.AuditLogAction.channel_update]
 
-        user_text = audit_user.mention if audit_user else "Someone"
+        if hasattr(before, "overwrites") and before.overwrites != after.overwrites:
+            audit_actions = [
+                discord.AuditLogAction.overwrite_create,
+                discord.AuditLogAction.overwrite_update,
+                discord.AuditLogAction.overwrite_delete,
+                discord.AuditLogAction.channel_update,
+            ]
+
+        for action in audit_actions:
+            for _ in range(5):
+                try:
+                    async for entry in before.guild.audit_logs(limit=10, action=action):
+                        is_recent = (
+                            entry.user
+                            and (discord.utils.utcnow() - entry.created_at).total_seconds() < 60
+                        )
+                        
+                        if not is_recent:
+                            continue
+                        
+                        if entry.target and getattr(entry.target, "id", None) == after.id:
+                            audit_user = entry.user
+                            break
+
+                        extra = getattr(entry, "extra", None)
+                        extra_channel = getattr(extra, "channel", None)
+
+                        if extra_channel and getattr(extra_channel, "id", None) == after.id:
+                            audit_user = entry.user
+                            break
+
+                        if audit_user:
+                            break
+
+                except discord.Forbidden:
+                    pass
+
+                await asyncio.sleep(1)
+
+                if audit_user:
+                    break
+
+        user_text = audit_user.mention if audit_user else "Unknown moderator"
 
         channel_text = after.mention if hasattr(after, "mention") else f"`{after.name}`"
 

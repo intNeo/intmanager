@@ -47,7 +47,7 @@ class LoggerServer(commands.Cog):
             except discord.NotFound:
                 self.active_timeouts.pop((guild_id, member_id), None)
                 continue
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.NotFound):
                 continue
 
             if not member.timed_out_until or member.timed_out_until <= now:
@@ -76,7 +76,7 @@ class LoggerServer(commands.Cog):
 
         try:
             await channel.send(embed=embed)
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.NotFound):
             pass
 
     def diff_role_permissions(self, before_perms, after_perms):
@@ -106,8 +106,8 @@ class LoggerServer(commands.Cog):
                 if entry.target and entry.target.id == role.id:
                     audit_user = entry.user
                     break
-        except discord.Forbidden:
-            pass
+        except (discord.Forbidden, discord.NotFound):
+            return
 
         user_text = audit_user.mention if audit_user else "Someone"
 
@@ -132,8 +132,8 @@ class LoggerServer(commands.Cog):
                 if entry.target and entry.target.id == role.id:
                     audit_user = entry.user
                     break
-        except discord.Forbidden:
-            pass
+        except (discord.Forbidden, discord.NotFound):
+            return
 
         user_text = audit_user.mention if audit_user else "Someone"
 
@@ -184,8 +184,8 @@ class LoggerServer(commands.Cog):
                 if entry.target and entry.target.id == after.id:
                     audit_user = entry.user
                     break
-        except discord.Forbidden:
-            pass
+        except (discord.Forbidden, discord.NotFound):
+            return
 
         user_text = audit_user.mention if audit_user else "Someone"
 
@@ -215,8 +215,8 @@ class LoggerServer(commands.Cog):
                     if entry.target and entry.target.id == after.id:
                         audit_user = entry.user
                         break
-            except discord.Forbidden:
-                pass
+            except (discord.Forbidden, discord.NotFound):
+                return
 
             user_text = audit_user.mention if audit_user else "Someone"
 
@@ -248,7 +248,7 @@ class LoggerServer(commands.Cog):
                         if entry.target and entry.target.id == after.id:
                             audit_user = entry.user
                             break
-                except discord.Forbidden:
+                except (discord.Forbidden, discord.NotFound):
                     pass
 
                 user_text = audit_user.mention if audit_user else "Someone"
@@ -277,7 +277,7 @@ class LoggerServer(commands.Cog):
                     ):
                         audit_user = entry.user
                         break
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.NotFound):
                 pass
 
             if audit_user:
@@ -336,8 +336,8 @@ class LoggerServer(commands.Cog):
             ):
                 audit_user = entry.user
                 break
-        except discord.Forbidden:
-            pass
+        except (discord.Forbidden, discord.NotFound):
+            return
 
         user_text = audit_user.mention if audit_user else "Someone"
 

@@ -16,7 +16,7 @@
 
 ##### Необходимо:
 - docker.io или docker-compose (по желанию)
-- Собираем образ: `docker build -t intneo/dsbotintmanager:1.1.2 .`
+- Собираем образ: `docker build -t intneo/dsbotintmanager:1.1.3 .`
 
 ##### Шаги:
 - После успешной сборки создаем файл в директории: `config/.env` и пишем свой `DISCORD_TOKEN=`
@@ -35,5 +35,5 @@ docker run -d \
   -e ENV_FILE=/app/config/.env \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/data:/app/data \
-  intneo/dsbotintmanager:1.1.2
+  intneo/dsbotintmanager:1.1.3
 ```

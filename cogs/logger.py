@@ -246,6 +246,8 @@ class Logger(commands.GroupCog, name="log"):
     
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
+        if before.author == self.bot.user:
+            return
         if before.content != after.content or before.attachments != after.attachments:
             attachments = ""
             if before.attachments:

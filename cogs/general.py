@@ -35,6 +35,25 @@ class General(commands.Cog):
         )
 
         embed.add_field(
+            name="🎵 Music commands (`/music`):",
+            value=(
+                "`/music add <channel>` — Set music text channel\n"
+                "`/music delete` — Remove music text channel\n"
+                "`/music show` — Show current music text channel\n"
+                "`/music play <url/query>` — Play music from YouTube or search query\n"
+                "`/music pause` — Pause current track\n"
+                "`/music resume` — Resume paused track\n"
+                "`/music skip` — Skip current track\n"
+                "`/music stop` — Stop playback and clear queue\n"
+                "`/music queue` — Show current queue\n"
+                "`/music nowplaying` — Show currently playing track"
+                "`/music repeat` — Toggle current track repeat\n"
+                "`/music replay` — Restart current track\n"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
             name="ℹ️ Info:",
             value="`/help` — Show this help menu",
             inline=False

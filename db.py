@@ -15,6 +15,10 @@ class Database:
                 guild_id INTEGER PRIMARY KEY,
                 channel_id INTEGER
             )""")
+            await db.execute("""CREATE TABLE IF NOT EXISTS music_channels (
+                guild_id INTEGER PRIMARY KEY,
+                channel_id INTEGER NOT NULL
+            )""")
             await db.commit()
 
     async def add_autorole(self, guild_id: int, role_id: int):
@@ -56,6 +60,44 @@ class Database:
                 row = await cursor.fetchone()
                 return row[0] if row else None
 
+    async def set_music_channel(self, guild_id: int, channel_id: int):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """
+                INSERT INTO music_channels (guild_id, channel_id)
+                VALUES (?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET channel_id = excluded.channel_id
+                """,
+                (guild_id, channel_id)
+            )
+            await db.commit()
+
+    async def get_music_channel(self, guild_id: int):
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT channel_id FROM music_channels WHERE guild_id = ?",
+                (guild_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else None
+            
+    async def delete_music_channel(self, guild_id: int):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "DELETE FROM music_channels WHERE guild_id = ?",
+                (guild_id,)
+            )
+            await db.commit()
+
+    async def del_music_channel(self, guild_id: int):
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "DELETE FROM music_channels WHERE guild_id = ?",
+                (guild_id,)
+            )
+            await db.commit()
+    
     async def clear_guild(self, guild_id: int):
         await self.del_autoroles(guild_id)
         await self.del_log_channel(guild_id)
+        await self.del_music_channel(guild_id)

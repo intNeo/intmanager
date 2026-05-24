@@ -7,6 +7,7 @@ from cogs.autorole import AutoRole
 from cogs.logger import Logger
 from cogs.loggerserver import LoggerServer
 from cogs.general import General
+from cogs.music import Music
 
 load_dotenv(os.getenv("ENV_FILE", "config/.env"))
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -14,6 +15,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+intents.voice_states = True
 intents.guilds = True
 intents.voice_states = True
 
@@ -28,6 +30,7 @@ class AutoRoleBot(commands.Bot):
         await self.add_cog(Logger(self))
         await self.add_cog(LoggerServer(self))
         await self.add_cog(General(self))
+        await self.add_cog(Music(self))
         self.tree.on_error = self.on_app_command_error
         await self.tree.sync()
     

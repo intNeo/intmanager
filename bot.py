@@ -17,7 +17,6 @@ intents.members = True
 intents.message_content = True
 intents.voice_states = True
 intents.guilds = True
-intents.voice_states = True
 
 class AutoRoleBot(commands.Bot):
     def __init__(self):
@@ -31,16 +30,43 @@ class AutoRoleBot(commands.Bot):
         await self.add_cog(LoggerServer(self))
         await self.add_cog(General(self))
         await self.add_cog(Music(self))
+        
         self.tree.on_error = self.on_app_command_error
-        await self.tree.sync()
+
+        # Глобальная синхронизация команд
+        try:
+            global_synced = await self.tree.sync()
+            print(f"🌍 Synced global commands: {len(global_synced)}")
+        except Exception as e:
+            print(f"❌ Failed to sync global commands: {e}")
+
+        # Синхронизация команд на всех гильдиях, где бот уже есть
+        for guild in self.guilds:
+            try:
+                synced = await self.tree.sync(guild=guild)
+                print(
+                    f"✅ Synced commands for guild "
+                    f"{guild.name} ({guild.id}): {len(synced)}"
+                )
+            except Exception as e:
+                print(
+                    f"❌ Failed to sync commands for guild "
+                    f"{guild.name} ({guild.id}): {e}"
+                )
     
-    async def on_app_command_error(self, interaction: discord.Interaction, error):
+    async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         from discord.app_commands import CheckFailure
         if isinstance(error, CheckFailure):
-            await interaction.response.send_message(
-                "❌ You do not have administrator permissions for this command.",
-                ephemeral=True
-            )
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "❌ You do not have administrator permissions for this command.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "❌ You do not have administrator permissions for this command.",
+                    ephemeral=True
+                )
         else:
             raise error  # для других ошибок
 
@@ -51,4 +77,22 @@ async def on_ready():
     print('Creator intNeo for intNeo Production server.')
     activity = discord.Activity(type=discord.ActivityType.listening, name="/help")
     await bot.change_presence(status=discord.Status.online, activity=activity)
+@bot.event
+async def on_guild_join(guild):
+    try:
+        synced = await bot.tree.sync(guild=guild)
+        print(
+            f"✅ Synced commands for new guild "
+            f"{guild.name} ({guild.id}): {len(synced)}"
+        )
+    except Exception as e:
+        print(
+            f"❌ Failed to sync commands for new guild "
+            f"{guild.name} ({guild.id}): {e}"
+        )
+
+if not TOKEN:
+    raise RuntimeError(
+        "DISCORD_TOKEN is not set. Check config/.env or ENV_FILE path."
+    )
 bot.run(TOKEN)

@@ -46,7 +46,7 @@ class General(commands.Cog):
                 "`/music skip` — Skip current track\n"
                 "`/music stop` — Stop playback and clear queue\n"
                 "`/music queue` — Show current queue\n"
-                "`/music nowplaying` — Show currently playing track"
+                "`/music nowplaying` — Show currently playing track\n"
                 "`/music repeat` — Toggle current track repeat\n"
                 "`/music replay` — Restart current track\n"
             ),

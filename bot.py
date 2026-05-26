@@ -39,20 +39,6 @@ class AutoRoleBot(commands.Bot):
             print(f"🌍 Synced global commands: {len(global_synced)}")
         except Exception as e:
             print(f"❌ Failed to sync global commands: {e}")
-
-        # Синхронизация команд на всех гильдиях, где бот уже есть
-        for guild in self.guilds:
-            try:
-                synced = await self.tree.sync(guild=guild)
-                print(
-                    f"✅ Synced commands for guild "
-                    f"{guild.name} ({guild.id}): {len(synced)}"
-                )
-            except Exception as e:
-                print(
-                    f"❌ Failed to sync commands for guild "
-                    f"{guild.name} ({guild.id}): {e}"
-                )
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         from discord.app_commands import CheckFailure
@@ -79,17 +65,7 @@ async def on_ready():
     await bot.change_presence(status=discord.Status.online, activity=activity)
 @bot.event
 async def on_guild_join(guild):
-    try:
-        synced = await bot.tree.sync(guild=guild)
-        print(
-            f"✅ Synced commands for new guild "
-            f"{guild.name} ({guild.id}): {len(synced)}"
-        )
-    except Exception as e:
-        print(
-            f"❌ Failed to sync commands for new guild "
-            f"{guild.name} ({guild.id}): {e}"
-        )
+    print(f"✅ Bot joined new guild: {guild.name} ({guild.id})")
 
 if not TOKEN:
     raise RuntimeError(

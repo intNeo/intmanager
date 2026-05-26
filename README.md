@@ -7,7 +7,7 @@
 - Должен быть предустановлен `docker` или `docker compose` (по желанию, лучше из официальной документации)
 
 ##### Шаги:
-- Собираем образ: `docker build -t intneo/dsbotintmanager:1.2.1 .`
+- Собираем образ: `docker build -t intneo/dsbotintmanager:1.2.2 .`
 - После успешной сборки создаем файл в директории: `config/.env` и пишем свой `DISCORD_TOKEN=`
 - Создаем директорию: `data`
 
@@ -19,7 +19,7 @@ docker run -d \
   -e ENV_FILE=/app/config/.env \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/data:/app/data \
-  intneo/dsbotintmanager:1.2.1
+  intneo/dsbotintmanager:1.2.2
 ```
 
 ##### docker compose:

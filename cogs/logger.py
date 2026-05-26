@@ -215,26 +215,6 @@ class Logger(commands.GroupCog, name="log"):
                 after.guild,
                 f"✏️ <@{after.id}> changed nickname: **{old_nick}** → **{new_nick}**"
             )
-    
-    """@commands.Cog.listener()
-    async def on_member_update(self, before, after):
-        if before.nick != after.nick:
-            old_nick = before.nick or before.name
-            new_nick = after.nick or after.name
-            await self.log(after.guild, f"✏️ <@{after.id}> changed nickname: **{old_nick}** → **{new_nick}**")
-
-        if before.timed_out_until != after.timed_out_until:
-            if after.timed_out_until:
-                async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_update):
-                    if entry.target.id == after.id:
-                        await self.log(after.guild, f"⏳ {entry.user.mention} timed out {after.mention} until {after.timed_out_until.strftime('%Y-%m-%d %H:%M:%S')}")
-                        break
-        
-        if before.timed_out_until and not after.timed_out_until:
-            async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_update):
-                if entry.target.id == after.id:
-                    await self.log(after.guild, f"🔓 {entry.user.mention} removed timeout from {after.mention}")
-                    break"""
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
@@ -403,3 +383,7 @@ class Logger(commands.GroupCog, name="log"):
         await self.db.del_autoroles(guild.id)
         await self.db.del_log_channel(guild.id)
         await self.db.clear_guild(guild.id)
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild):
+        print(f"❌ Bot was removed from guild: {guild.name} ({guild.id})")

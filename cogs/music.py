@@ -13,6 +13,16 @@ YDL_OPTIONS = {
     "quiet": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
+
+    "js_runtimes": {
+        "node": {"path": "/usr/local/bin/node"},
+    },
+
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["default", "web_embedded"],
+        },
+    },
 }
 
 FFMPEG_OPTIONS = {

@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+FROM node:22-bookworm-slim AS node
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -6,9 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV ENV_FILE=/app/config/.env
 
-RUN apt-get update && apt-get install -y \
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    nodejs \
     libffi-dev \
     libnacl-dev \
     python3-dev \

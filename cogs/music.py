@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 import discord
 import yt_dlp
 
@@ -31,6 +32,13 @@ class MusicTrack:
 class Music(commands.GroupCog, name="music"):
     def __init__(self, bot):
         self.bot = bot
+        self.ydl_options = dict(YDL_OPTIONS)
+        cookies_file = Path(__file__).resolve().parent.parent / "config" / "cookies.txt"
+        if cookies_file.is_file():
+            self.ydl_options["cookiefile"] = str(cookies_file)
+            print("🍪 YouTube cookies enabled for yt-dlp.")
+        else:
+            print("ℹ️ config/cookies.txt not found; continuing without YouTube cookies.")
         self.queues = {}
         self.current = {}
         self.repeat = {}
@@ -59,7 +67,7 @@ class Music(commands.GroupCog, name="music"):
         loop = asyncio.get_running_loop()
 
         def extract():
-            with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            with yt_dlp.YoutubeDL(self.ydl_options) as ydl:
                 return ydl.extract_info(query, download=False)
 
         data = await loop.run_in_executor(None, extract)

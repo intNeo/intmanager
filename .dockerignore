@@ -2,8 +2,6 @@ __pycache__/
 *.pyc
 .git/
 .gitignore
-.venv/
-venv/
 .bot/
 data/
-config/.env
+config/

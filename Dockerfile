@@ -10,6 +10,7 @@ ENV ENV_FILE=/app/config/.env
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
     ffmpeg \
     libffi-dev \
     libnacl-dev \

@@ -1,12 +1,12 @@
 services:
   dsbotintmanager:
-    image: intneo/dsbotintmanager:1.2.7
+    image: intneo/dsbotintmanager:1.3.0
     container_name: dsbotintmanager
     restart: unless-stopped
 
     environment:
       ENV_FILE: /app/config/.env
-      TZ: Europe/Moscow
+      TZ: Etc/UTC
 
     volumes:
       - ./config:/app/config

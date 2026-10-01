@@ -39,7 +39,9 @@ class General(commands.Cog):
             value=(
                 "`/music add <channel>` — Set music text channel\n"
                 "`/music delete` — Remove music text channel\n"
-                "`/music show` — Show current music text channel\n"
+                "`/music show` — Show music channel and role restrictions\n"
+                "`/music role <role>` — Set required music role (admin)\n"
+                "`/music unrole` — Remove music role restriction (admin)\n"
                 "`/music play <url/query>` — Play music from YouTube or search query\n"
                 "`/music pause` — Pause current track\n"
                 "`/music resume` — Resume paused track\n"

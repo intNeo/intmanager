@@ -31,6 +31,10 @@ FFMPEG_OPTIONS = {
 }
 
 
+class MusicAccessDenied(app_commands.CheckFailure):
+    """A user-facing music access restriction."""
+
+
 class MusicTrack:
     def __init__(self, title, url, webpage_url, requester):
         self.title = title
@@ -54,6 +58,34 @@ class Music(commands.GroupCog, name="music"):
         self.repeat = {}
         self.replay_requested = set()
         self.db = bot.db
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild is None:
+            raise MusicAccessDenied("❌ Music commands can only be used in a server.")
+
+        # Configuration stays accessible to admins from any channel or role.
+        if interaction.command.name in {"add", "delete", "show", "role", "unrole"}:
+            return True
+
+        channel_id = await self.db.get_music_channel(interaction.guild.id)
+        role_id = await self.db.get_music_role(interaction.guild.id)
+        if channel_id and interaction.channel_id != channel_id:
+            channel = interaction.guild.get_channel(channel_id)
+            if channel is None:
+                raise MusicAccessDenied(
+                    "❌ The configured music channel was deleted. Ask an administrator "
+                    "to update /music add or remove it with /music delete."
+                )
+            raise MusicAccessDenied(f"❌ Use music commands in {channel.mention}.")
+        if role_id and not any(role.id == role_id for role in interaction.user.roles):
+            role = interaction.guild.get_role(role_id)
+            if role is None:
+                raise MusicAccessDenied(
+                    "❌ The configured music role was deleted. Ask an administrator "
+                    "to update /music role or remove it with /music unrole."
+                )
+            raise MusicAccessDenied(f"❌ You need {role.mention} to use music commands.")
+        return True
 
     async def get_music_text_channel(self, guild: discord.Guild, fallback_channel):
         channel_id = await self.db.get_music_channel(guild.id)
@@ -220,24 +252,34 @@ class Music(commands.GroupCog, name="music"):
         )
 
 
-    @app_commands.command(name="show", description="Show current music text channel")
+    @app_commands.command(name="role", description="Set the role allowed to use music commands")
+    @app_commands.describe(role="Required music role (not assigned automatically)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_role(self, interaction: discord.Interaction, role: discord.Role):
+        await self.db.set_music_role(interaction.guild.id, role.id)
+        await interaction.response.send_message(
+            f"✅ Music role set to {role.mention}.", ephemeral=True,
+        )
+
+    @app_commands.command(name="unrole", description="Remove the music role restriction")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def unset_role(self, interaction: discord.Interaction):
+        await self.db.del_music_role(interaction.guild.id)
+        await interaction.response.send_message("🗑️ Music role restriction removed.", ephemeral=True)
+
+    @app_commands.command(name="show", description="Show current music channel and role restrictions")
     async def show(self, interaction: discord.Interaction):
         channel_id = await self.db.get_music_channel(interaction.guild.id)
-
-        if not channel_id:
-            await interaction.response.send_message(
-                "📭 Music channel is not set.",
-                ephemeral=True,
-            )
-            return
-
-        channel = interaction.guild.get_channel(channel_id)
-
+        role_id = await self.db.get_music_role(interaction.guild.id)
+        channel = interaction.guild.get_channel(channel_id) if channel_id else None
+        role = interaction.guild.get_role(role_id) if role_id else None
+        channel_text = (channel.mention if channel else "Deleted channel — update or remove restriction") if channel_id else "Any channel"
+        role_text = (role.mention if role else "Deleted role — update or remove restriction") if role_id else "Everyone"
         await interaction.response.send_message(
-            f"🎵 Current music channel: {channel.mention if channel else '`Deleted channel`'}",
-            ephemeral=True,
+            f"🎵 Music channel: {channel_text}\n🎫 Music role: {role_text}\n"
+            "When both are configured, both restrictions apply.", ephemeral=True,
         )
-    
+
     @app_commands.command(name="play", description="Play music from YouTube URL or search query")
     @app_commands.describe(query="YouTube URL or search query")
     async def play(self, interaction: discord.Interaction, query: str):

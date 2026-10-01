@@ -7,7 +7,7 @@ from cogs.autorole import AutoRole
 from cogs.logger import Logger
 from cogs.loggerserver import LoggerServer
 from cogs.general import General
-from cogs.music import Music
+from cogs.music import Music, MusicAccessDenied
 
 load_dotenv(os.getenv("ENV_FILE", "config/.env"))
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -42,7 +42,10 @@ class AutoRoleBot(commands.Bot):
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
         from discord.app_commands import CheckFailure
-        if isinstance(error, CheckFailure):
+        if isinstance(error, MusicAccessDenied):
+            sender = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+            await sender(str(error), ephemeral=True)
+        elif isinstance(error, CheckFailure):
             if interaction.response.is_done():
                 await interaction.followup.send(
                     "❌ You do not have administrator permissions for this command.",

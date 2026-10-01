@@ -1,5 +1,2 @@
-.bot/
-__pycache__/
-*.pyc
 config/
 data/

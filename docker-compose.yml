@@ -1,6 +1,6 @@
 services:
   dsbotintmanager:
-    image: intneo/dsbotintmanager:1.2.6
+    image: intneo/dsbotintmanager:1.2.7
     container_name: dsbotintmanager
     restart: unless-stopped
 

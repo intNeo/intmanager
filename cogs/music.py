@@ -1,4 +1,7 @@
 import asyncio
+import shutil
+import tempfile
+import threading
 from pathlib import Path
 import discord
 import yt_dlp
@@ -26,7 +29,6 @@ YDL_OPTIONS = {
 }
 
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
 
@@ -38,7 +40,9 @@ class MusicAccessDenied(app_commands.CheckFailure):
 class MusicTrack:
     def __init__(self, title, url, webpage_url, requester):
         self.title = title
-        self.url = url
+        self.url = webpage_url
+        self.local_dir = None
+        self.local_path = None
         self.webpage_url = webpage_url
         self.requester = requester
 
@@ -56,8 +60,12 @@ class Music(commands.GroupCog, name="music"):
         self.queues = {}
         self.current = {}
         self.repeat = {}
-        self.replay_requested = set()
         self.db = bot.db
+        self._players = {}
+        self._actions = {}
+        self._downloads = {}
+        self._closed = False
+        self._ydl_lock = threading.Lock()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.guild is None:
@@ -109,7 +117,7 @@ class Music(commands.GroupCog, name="music"):
         loop = asyncio.get_running_loop()
 
         def extract():
-            with yt_dlp.YoutubeDL(self.ydl_options) as ydl:
+            with self._ydl_lock, yt_dlp.YoutubeDL(self.ydl_options) as ydl:
                 return ydl.extract_info(query, download=False)
 
         data = await loop.run_in_executor(None, extract)
@@ -119,7 +127,7 @@ class Music(commands.GroupCog, name="music"):
 
         return MusicTrack(
             title=data.get("title", "Unknown title"),
-            url=data["url"],
+            url=data.get("webpage_url", query),
             webpage_url=data.get("webpage_url", query),
             requester=requester,
         )
@@ -165,69 +173,188 @@ class Music(commands.GroupCog, name="music"):
 
         return interaction.guild.voice_client
     
-    async def play_next(self, interaction_or_guild, text_channel):
-        guild = (
-            interaction_or_guild.guild
-            if hasattr(interaction_or_guild, "guild")
-            else interaction_or_guild
-        )
+    def _cleanup_track(self, track):
+        if track.local_dir:
+            shutil.rmtree(track.local_dir, ignore_errors=True)
+        track.local_dir = None
+        track.local_path = None
 
-        queue = self.get_queue(guild.id)
-        voice = guild.voice_client
-        track = None
+    async def _download_track(self, guild_id, track):
+        cancelled = threading.Event()
+        self._downloads[guild_id] = cancelled
 
-        if guild.id in self.replay_requested:
-            self.replay_requested.remove(guild.id)
-            track = self.current.get(guild.id)
-
-        elif self.repeat.get(guild.id) and self.current.get(guild.id):
-            track = self.current[guild.id]
-
-        else:
-            if queue.empty():
-                self.current.pop(guild.id, None)
-                return
-
-            track = await queue.get()
-            self.current[guild.id] = track
-
-        if not track:
-            return
-
-        if not voice or not voice.is_connected():
-            return
-
-        source = discord.FFmpegPCMAudio(
-            track.url,
-            before_options=FFMPEG_OPTIONS["before_options"],
-            options=FFMPEG_OPTIONS["options"],
-        )
-
-        def after_play(error):
-            if error:
-                print(f"Music playback error: {error}")
-
-            future = asyncio.run_coroutine_threadsafe(
-                self.play_next(guild, text_channel),
-                self.bot.loop,
-            )
-
+        def download():
+            directory = tempfile.mkdtemp(prefix="intmanager-audio-")
+            def progress(_status):
+                if cancelled.is_set():
+                    raise RuntimeError("Download cancelled")
+            options = dict(self.ydl_options)
+            options.update({
+                "outtmpl": str(Path(directory) / "audio.%(ext)s"),
+                "progress_hooks": [progress],
+                "retries": 3,
+                "fragment_retries": 3,
+                "socket_timeout": 20,
+                "match_filter": lambda info, **kwargs: "Live streams are not supported" if info.get("is_live") else None,
+                "http_chunk_size": 1024 * 1024,
+            })
             try:
-                future.result()
-            except Exception as exc:
-                print(f"Music next track error: {exc}")
+                with self._ydl_lock, yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(track.webpage_url, download=True)
+                    if info.get("is_live"):
+                        raise RuntimeError("Live streams are not supported by file playback")
+                    filename = ydl.prepare_filename(info)
+                if cancelled.is_set():
+                    raise RuntimeError("Download cancelled")
+                if not Path(filename).is_file():
+                    raise RuntimeError("Downloaded audio file not found")
+                return directory, filename
+            except BaseException:
+                shutil.rmtree(directory, ignore_errors=True)
+                raise
 
-        voice.play(source, after=after_play)
+        worker = asyncio.create_task(asyncio.to_thread(download))
+        try:
+            track.local_dir, track.local_path = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancelled.set()
+            def dispose(task):
+                if not task.cancelled():
+                    try:
+                        directory, _ = task.result()
+                        shutil.rmtree(directory, ignore_errors=True)
+                    except Exception:
+                        pass
+            worker.add_done_callback(dispose)
+            raise
+        finally:
+            if self._downloads.get(guild_id) is cancelled:
+                self._downloads.pop(guild_id, None)
 
-        embed = discord.Embed(
-            title="🎶 Now playing",
-            description=f"[{track.title}]({track.webpage_url})",
-            color=discord.Color.green(),
-        )
-        embed.add_field(name="Requested by", value=track.requester.mention, inline=True)
+    async def _notify(self, guild, fallback, **kwargs):
+        channel = await self.get_music_text_channel(guild, fallback)
+        if channel:
+            try:
+                await channel.send(**kwargs)
+            except discord.HTTPException:
+                pass
 
-        music_channel = await self.get_music_text_channel(guild, text_channel)
-        await music_channel.send(embed=embed)
+    async def play_next(self, interaction_or_guild, text_channel):
+        guild = getattr(interaction_or_guild, "guild", interaction_or_guild)
+        task = self._players.get(guild.id)
+        if self._closed or (task and not task.done()):
+            return
+        self._players[guild.id] = asyncio.create_task(self._player(guild, text_channel))
+
+    async def _player(self, guild, text_channel):
+        guild_id = guild.id
+        track = None
+        voice = None
+        try:
+            queue = self.get_queue(guild_id)
+            while not queue.empty() and not self._closed:
+                voice = guild.voice_client
+                if not voice or not voice.is_connected():
+                    break
+                track = queue.get_nowait()
+                queue.task_done()
+                self.current[guild_id] = track
+                self._actions[guild_id] = None
+                try:
+                    await self._download_track(guild_id, track)
+                    while True:
+                        if self._actions.get(guild_id) == "skip":
+                            break
+                        voice = guild.voice_client
+                        if not voice or not voice.is_connected():
+                            return
+                        finished = asyncio.get_running_loop().create_future()
+                        loop = asyncio.get_running_loop()
+                        def finish(error, finished=finished):
+                            if not finished.done():
+                                finished.set_result(error)
+                        def after(error, loop=loop, finish=finish):
+                            loop.call_soon_threadsafe(finish, error)
+                        source = discord.FFmpegPCMAudio(track.local_path, **FFMPEG_OPTIONS)
+                        try:
+                            voice.play(source, after=after)
+                        except BaseException:
+                            source.cleanup()
+                            raise
+                        embed = discord.Embed(
+                            title="🎶 Now playing",
+                            description=f"[{track.title}]({track.webpage_url})",
+                            color=discord.Color.green(),
+                        )
+                        embed.add_field(name="Requested by", value=track.requester.mention)
+                        await self._notify(guild, text_channel, embed=embed)
+                        error = await finished
+                        action = self._actions.pop(guild_id, None)
+                        if error:
+                            raise error
+                        if action == "skip":
+                            break
+                        if action == "replay" or self.repeat.get(guild_id, False):
+                            continue
+                        break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    if self._actions.get(guild_id) != "skip":
+                        print(f"Music preparation/playback failed ({guild_id}): {type(exc).__name__}")
+                        await self._notify(
+                            guild, text_channel,
+                            content=f"❌ Could not prepare or play **{track.title}**. Skipping track.",
+                        )
+                finally:
+                    self._cleanup_track(track)
+                    if self.current.get(guild_id) is track:
+                        self.current.pop(guild_id, None)
+                    track = None
+        finally:
+            if voice and (voice.is_playing() or voice.is_paused()):
+                voice.stop()
+            if track:
+                self._cleanup_track(track)
+            self.current.pop(guild_id, None)
+            self._actions.pop(guild_id, None)
+            if self._players.get(guild_id) is asyncio.current_task():
+                self._players.pop(guild_id, None)
+
+    async def _stop_player(self, guild):
+        guild_id = guild.id
+        self.repeat.pop(guild_id, None)
+        cancelled = self._downloads.get(guild_id)
+        if cancelled:
+            cancelled.set()
+        task = self._players.get(guild_id)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        queue = self.get_queue(guild_id)
+        while not queue.empty():
+            queue.get_nowait()
+            queue.task_done()
+        voice = guild.voice_client
+        if voice:
+            voice.stop()
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if member.id == self.bot.user.id and before.channel and after.channel is None:
+            await self._stop_player(member.guild)
+
+    async def cog_unload(self):
+        self._closed = True
+        for cancelled in self._downloads.values():
+            cancelled.set()
+        tasks = list(self._players.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     @app_commands.command(name="add", description="Set music text channel")
     @app_commands.describe(channel="Text channel for music messages")
@@ -348,44 +475,27 @@ class Music(commands.GroupCog, name="music"):
 
     @app_commands.command(name="skip", description="Skip current track")
     async def skip(self, interaction: discord.Interaction):
-        voice = interaction.guild.voice_client
-
-        if not voice or not voice.is_playing():
-            await interaction.response.send_message(
-                "❌ Nothing is playing.",
-                ephemeral=True,
-            )
+        guild_id = interaction.guild.id
+        if guild_id not in self.current:
+            await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
             return
-
-        voice.stop()
-        await interaction.response.send_message(
-                "⏭️ Track skipped.",
-                ephemeral=True
-            )
+        self._actions[guild_id] = "skip"
+        cancelled = self._downloads.get(guild_id)
+        if cancelled:
+            cancelled.set()
+        voice = interaction.guild.voice_client
+        if voice and (voice.is_playing() or voice.is_paused()):
+            voice.stop()
+        await interaction.response.send_message("⏭️ Track skipped.", ephemeral=True)
 
     @app_commands.command(name="stop", description="Stop playback and clear queue")
     async def stop(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self._stop_player(interaction.guild)
         voice = interaction.guild.voice_client
-
-        queue = self.get_queue(interaction.guild.id)
-
-        while not queue.empty():
-            try:
-                queue.get_nowait()
-                queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-
-        self.current.pop(interaction.guild.id, None)
-
         if voice:
-            voice.stop()
             await voice.disconnect()
-
-        await interaction.response.send_message(
-                "⏹️ Playback stopped and queue cleared.",
-                ephemeral=True
-            )
+        await interaction.followup.send("⏹️ Playback stopped and queue cleared.", ephemeral=True)
 
     @app_commands.command(name="queue", description="Show current music queue")
     async def queue(self, interaction: discord.Interaction):
@@ -474,7 +584,10 @@ class Music(commands.GroupCog, name="music"):
             )
             return
 
-        self.replay_requested.add(guild_id)
+        if not (voice.is_playing() or voice.is_paused()):
+            await interaction.response.send_message("⏳ Track is still downloading.", ephemeral=True)
+            return
+        self._actions[guild_id] = "replay"
         voice.stop()
 
         await interaction.response.send_message(

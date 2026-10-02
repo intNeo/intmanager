@@ -7,7 +7,7 @@
 - Должен быть предустановлен `docker` или `docker compose` (по желанию, лучше из официальной документации)
 
 ##### Шаги:
-- Собираем образ: `docker build -t intneo/dsbotintmanager:1.3.0 .`
+- Собираем образ: `docker build -t intneo/dsbotintmanager:1.3.1 .`
 - После успешной сборки создаем файл в директорию: `config/`
 - Создаем файл `.env` и пишем свой `DISCORD_TOKEN=`
 - При необходимости можно поместить `cookies.txt`, формат `Netscape`. Нужно, если вы хотите слушать треки с возрастным ограничением 18+
@@ -22,7 +22,7 @@ docker run -d \
   -e TZ=Etc/UTC \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/data:/app/data \
-  intneo/dsbotintmanager:1.3.0
+  intneo/dsbotintmanager:1.3.1
 ```
 
 ##### docker compose:

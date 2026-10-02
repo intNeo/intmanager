@@ -268,6 +268,7 @@ class Music(commands.GroupCog, name="music"):
         await interaction.response.send_message("🗑️ Music role restriction removed.", ephemeral=True)
 
     @app_commands.command(name="show", description="Show current music channel and role restrictions")
+    @app_commands.checks.has_permissions(administrator=True)
     async def show(self, interaction: discord.Interaction):
         channel_id = await self.db.get_music_channel(interaction.guild.id)
         role_id = await self.db.get_music_role(interaction.guild.id)
